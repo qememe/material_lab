@@ -13,3 +13,5 @@ maps/
 .DS_Store
 Thumbs.db
 CMakeUserPresets.json
+
+optimizations.cfg

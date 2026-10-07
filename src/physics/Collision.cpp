@@ -6,11 +6,15 @@ void PhysicsWorld::collide(float dt,bool damage) {
         unsigned ownLevel=particleLevels_[i];
         for(unsigned level=0;level<=ownLevel;++level) {
         if(!(detailLevels_&(1u<<level))) continue;
+        // Fine resting samples must still find incoming coarse particles.
+        // Same-size/coarser resting samples are found by the awake particle.
+        if(sleepingTerrain_[i]&&(level==ownLevel||!(awakeLevels_&(1u<<level)))) continue;
         float scale=std::ldexp(1.f,int(level));
         int x=int(std::floor(a.position.x*scale)), y=int(std::floor(a.position.y*scale));
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
             for(auto j=detailHead(x+dx,y+dy,level);j!=noParticle;j=detailNext_[j]) {
-                if(level==ownLevel&&j<=i) continue;
+                if(level==ownLevel&&j<=i&&!sleepingTerrain_[j]) continue;
+                if(sleepingTerrain_[i]&&sleepingTerrain_[j]) continue;
                 auto& b=particles[j];
                 float diameter=a.radius+b.radius;
                 Vec2 delta=b.position-a.position; float d2=dot(delta,delta);

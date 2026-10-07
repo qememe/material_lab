@@ -2,6 +2,16 @@
 #include <numbers>
 namespace lab {
 namespace {
+template<class T> void hashValue(std::uint64_t& key,const T& value) {
+    auto bytes=reinterpret_cast<const unsigned char*>(&value);
+    for(std::size_t i=0;i<sizeof(T);++i) {key^=bytes[i];key*=1099511628211ULL;}
+}
+std::uint64_t viewKey(const Camera& c,const DebugOptions& d) {
+    std::uint64_t key=1469598103934665603ULL;
+    hashValue(key,c.center);hashValue(key,c.zoom);hashValue(key,c.viewport);
+    hashValue(key,d.temperature);hashValue(key,d.enabled);hashValue(key,d.stress);return key;
+}
+bool staticTerrain(const Particle& p) {return p.active&&p.worldCell&&p.inverseMass()==0&&p.liquidFraction<=.55f&&p.refinementLevel==0;}
 Vector2 rv(Vec2 p) {return {p.x,p.y};}
 void disk(Vector2 center,float radius,Color color) {
     // Sagitta below 0.12 pixels for small circles; retain the original high
@@ -22,8 +32,20 @@ Color Renderer::cellColor(const Particle& p,bool stress) {
     else if(p.temperature>80) {float t=std::clamp((p.temperature-80)/1600,.0f,1.f);c.r=static_cast<unsigned char>(c.r*(1-t)+255*t);c.g=static_cast<unsigned char>(c.g*(1-t)+100*t);}
     return c;
 }
-void Renderer::releaseSurface() {if(surfaceTexture_.id) UnloadTexture(surfaceTexture_);surfaceTexture_={};}
+void Renderer::releaseSurface() {
+    if(surfaceTexture_.id) UnloadTexture(surfaceTexture_);
+    if(terrainBonds_.id) UnloadRenderTexture(terrainBonds_);
+    if(terrainParticles_.id) UnloadRenderTexture(terrainParticles_);
+    surfaceTexture_={};terrainBonds_={};terrainParticles_={};terrainValid_=liquidValid_=false;
+}
 void Renderer::drawLiquidSurface(const SimulationState& s,const Camera& c) const {
+    auto key=viewKey(c,debug);
+    for(const auto& p:s.world.particles) if(p.active&&(p.liquidFraction>.55f||p.refinementLevel>0)) hashValue(key,p);
+    if(s.world.config.optimizations.cachedLiquidDrawing&&liquidValid_&&key==liquidKey_&&surfaceTexture_.id) {
+        DrawTexturePro(surfaceTexture_,{0,0,float(surfaceTexture_.width),float(surfaceTexture_.height)},
+            {c.viewport.x,c.viewport.y,float(surfaceTexture_.width)*3,float(surfaceTexture_.height)*3},{0,0},0,WHITE);return;
+    }
+    liquidKey_=key;liquidValid_=s.world.config.optimizations.cachedLiquidDrawing;
     constexpr float cell=3;
     int width=int(std::ceil(c.viewport.width/cell)),height=int(std::ceil(c.viewport.height/cell));
     std::size_t count=std::size_t(width)*height;surfaceField_.assign(count,{});surfacePixels_.resize(count);
@@ -46,7 +68,7 @@ void Renderer::drawLiquidSurface(const SimulationState& s,const Camera& c) const
             auto& pixel=surfaceField_[std::size_t(y)*width+x];pixel.density+=weight;pixel.red+=weight*col.r;pixel.green+=weight*col.g;pixel.blue+=weight*col.b;
         }
     }
-    if(!liquid) return;
+    if(!liquid) {liquidValid_=false;return;}
     for(std::size_t i=0;i<count;++i) {
         const auto& p=surfaceField_[i];float coverage=std::clamp((p.density-.13f)/.22f,0.f,1.f);coverage=coverage*coverage*(3-2*coverage);
         if(p.density<.00001f) surfacePixels_[i]={0,0,0,0};
@@ -77,8 +99,43 @@ void Renderer::drawWorld(const SimulationState& s,const Camera& c,Vec2 mouse) co
         }
         return cellColor(p,debug.enabled&&debug.stress);
     };
+    EndScissorMode();
+    bool cachedTerrain=s.world.config.optimizations.cachedTerrainDrawing&&!debug.particles;
+    auto terrainBond=[&](const Bond& b){return !b.broken&&staticTerrain(s.world.particles[b.a])&&staticTerrain(s.world.particles[b.b]);};
+    if(cachedTerrain) {
+        auto key=viewKey(c,debug);int width=GetScreenWidth(),height=GetScreenHeight();hashValue(key,width);hashValue(key,height);
+        bool hasTerrain=false;
+        for(std::size_t i=0;i<s.world.particles.size();++i) if(staticTerrain(s.world.particles[i])) {hasTerrain=true;hashValue(key,i);hashValue(key,s.world.particles[i]);}
+        if(!hasTerrain) {cachedTerrain=false;terrainValid_=false;}
+        for(const auto& b:s.world.bonds) if(terrainBond(b)) hashValue(key,b);
+        if(cachedTerrain&&(!terrainValid_||key!=terrainKey_)) {
+            if(!terrainBonds_.id||terrainBonds_.texture.width!=width||terrainBonds_.texture.height!=height) {
+                if(terrainBonds_.id) UnloadRenderTexture(terrainBonds_);
+                if(terrainParticles_.id) UnloadRenderTexture(terrainParticles_);
+                terrainBonds_=LoadRenderTexture(width,height);terrainParticles_=LoadRenderTexture(width,height);
+            }
+            cachedTerrain=terrainBonds_.id&&terrainParticles_.id;
+            if(cachedTerrain) {
+                BeginTextureMode(terrainBonds_);ClearBackground(BLANK);
+                for(const auto& b:s.world.bonds) if(terrainBond(b)) {
+                    const auto& a=s.world.particles[b.a];const auto& p=s.world.particles[b.b];
+                    DrawLineEx(rv(c.toScreen(a.position)),rv(c.toScreen(p.position)),std::max(.6f,2.12f*std::min(a.radius,p.radius)*c.zoom),shade(a));
+                }
+                EndTextureMode();BeginTextureMode(terrainParticles_);ClearBackground(BLANK);
+                for(const auto& p:s.world.particles) if(staticTerrain(p)) {
+                    auto pos=c.toScreen(p.position);float size=c.zoom*p.radius*2.12f;
+                    if(p.temperature>600&&!debug.temperature) disk(rv(pos),std::max(1.f,size*.9f),Color{255,105,25,35});
+                    disk(rv(pos),std::max(.4f,size*.5f),shade(p));
+                }
+                EndTextureMode();terrainKey_=key;terrainValid_=true;
+            }
+        }
+    } else terrainValid_=false;
+    BeginScissorMode(int(v.x),int(v.y),int(v.width),int(v.height));
+    auto drawTerrainLayer=[&](RenderTexture2D target) {DrawTextureRec(target.texture,{0,0,float(target.texture.width),-float(target.texture.height)},{0,0},WHITE);};
+    if(cachedTerrain) drawTerrainLayer(terrainBonds_);
     // Connected samples form a filled material surface; sampling is a separate view.
-    if(!debug.particles) for(const auto& bond:s.world.bonds) if(!bond.broken) {
+    if(!debug.particles) for(const auto& bond:s.world.bonds) if(!bond.broken&&!(cachedTerrain&&terrainBond(bond))) {
         const auto& a=s.world.particles[bond.a];const auto& b=s.world.particles[bond.b];
         if(!a.active||!b.active||a.liquidFraction>.55f||b.liquidFraction>.55f) continue;
         Vec2 p=c.toScreen(a.position),q=c.toScreen(b.position);
@@ -92,13 +149,14 @@ void Renderer::drawWorld(const SimulationState& s,const Camera& c,Vec2 mouse) co
         if(bond.broken) {if(length(a-b)<c.zoom*3) DrawLineEx(rv(a),rv(b),1,{255,83,99,100});}
         else DrawLineEx(rv(a),rv(b),1.5f,{100,210,185,180});
     }
+    if(cachedTerrain) drawTerrainLayer(terrainParticles_);
     bool hasSurface=false;
     for(std::size_t i=0;i<s.world.particles.size();++i) {
         const auto& p=s.world.particles[i];if(!p.active) continue;
         hasSurface|=p.liquidFraction>.55f||p.refinementLevel>0;
         Vec2 pos=c.toScreen(p.position);if(pos.x<v.x-30||pos.x>v.x+v.width+30||pos.y<v.y-30||pos.y>v.y+v.height+30) continue;
         float size=c.zoom*p.radius*2.12f; Color col=shade(p);
-        if((p.liquidFraction<=.55f&&p.refinementLevel==0)||debug.particles) {
+        if(!((cachedTerrain&&staticTerrain(p)))&&((p.liquidFraction<=.55f&&p.refinementLevel==0)||debug.particles)) {
             if(p.temperature>600&&!debug.temperature) disk(rv(pos),std::max(1.f,size*.9f),Color{255,105,25,35});
             disk(rv(pos),std::max(.4f,size*(debug.particles?.35f:.5f)),col);
         }

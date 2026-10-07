@@ -18,10 +18,12 @@ public:
     std::string timelineMessage;
     bool calculate(bool preview=true);
     void invalidateTimeline();
+    void setOptimizations(const Optimizations& options);
+    void pauseCalculation(bool paused) {if(timeline_) timeline_->pauseCalculation(paused);}
     bool hasTimeline() const {return bool(timeline_);}
     bool baking() const {return timeline_&&timeline_->baking();}
     double calculatedSeconds() const {return timeline_?timeline_->calculatedSeconds():0;}
-    bool timelineFailed() const {return timeline_&&!timeline_->error.empty();}
+    bool timelineFailed() const {return timeline_&&!timeline_->error().empty();}
     bool seek(double seconds);
     void stepFrame(int direction=1);
     bool start();

@@ -131,7 +131,7 @@ UIAction UI::drawToybox(const SimulationState& state) {
     BeginScissorMode(int(x),int(y+450),515,35);text(message,x,y+453,12,muted);EndScissorMode();
     return UIAction::None;
 }
-UIAction UI::drawMenu(bool hasMap) {
+UIAction UI::drawMenu(bool hasMap,Optimizations& options) {
     mouse_={float(GetMouseX()),float(GetMouseY())};press_=IsMouseButtonPressed(MOUSE_BUTTON_LEFT);release_=IsMouseButtonReleased(MOUSE_BUTTON_LEFT);down_=IsMouseButtonDown(MOUSE_BUTTON_LEFT);tooltip_.clear();
     float width=float(GetScreenWidth()),height=float(GetScreenHeight()),cx=width*.5f;
     panel({0,0,width,height},{13,19,29,255});
@@ -139,6 +139,40 @@ UIAction UI::drawMenu(bool hasMap) {
     for(int y=0;y<height;y+=60) DrawLine(0,y,int(width),y,{20,29,41,255});
     auto centered=[&](const char* line,float y,float size,Color color){text(line,cx-MeasureTextEx(font_,line,size,.5f).x*.5f,y,size,color);};
     centered("MATERIAL LAB  /  V2",70,38,accent);centered("ТЕРМОМЕХАНИКА / ЛАБОРАТОРИЯ МАТЕРИАЛОВ",122,14,muted);
+    if(settingsOpen_) {
+        centered("НАСТРОЙКИ",180,26,textColor);
+        if(button({cx-360,225,190,36},"ОПТИМИЗАЦИЯ",optimizationPage_)) optimizationPage_=true;
+        if(button({cx+170,225,190,36},"НАЗАД")) {
+            if(optimizationPage_) optimizationPage_=false;
+            else settingsOpen_=false;
+            clearFocus();return UIAction::None;
+        }
+        if(!optimizationPage_) {centered("Выберите раздел настроек.",310,16,muted);return UIAction::None;}
+        struct Entry {const char* name;const char* description;bool* value;};
+        Entry entries[]{
+            {"Спящий грунт","Пропуск поиска контактов между спокойными ячейками грунта.",&options.sleepingTerrain},
+            {"Кэш связей","Повторное использование соседей и связных частей тел.",&options.cachedBonds},
+            {"Быстрый таймлайн","Один проход записи изменений и кэш последнего прочитанного кадра.",&options.bufferedTimeline},
+            {"Фоновый расчёт","Расчёт таймлайна в отдельном потоке для отзывчивого интерфейса.",&options.backgroundCalculation},
+            {"Кэш изображения грунта","Готовые слои неподвижного грунта до изменения сцены или камеры.",&options.cachedTerrainDrawing},
+            {"Кэш поверхности расплава","Повторное использование поверхности, пока её данные не изменились.",&options.cachedLiquidDrawing}
+        };
+        bool changed=false;
+        for(int i=0;i<6;++i) {
+            float y=290+i*76.f;Rectangle row{cx-360,y,720,65};
+            if(button(row,"")) {*entries[i].value=!*entries[i].value;changed=true;}
+            Rectangle check{cx-343,y+12,22,22};DrawRectangleLinesEx(check,1,*entries[i].value?accent:muted);
+            if(*entries[i].value) {
+                DrawLineEx({check.x+4,check.y+11},{check.x+9,check.y+17},2,accent);
+                DrawLineEx({check.x+9,check.y+17},{check.x+18,check.y+5},2,accent);
+            }
+            text(entries[i].name,cx-305,y+10,17,textColor);
+            text(entries[i].description,cx-305,y+37,12,muted);
+        }
+        centered("Настройки сохраняются автоматически. Изменение пересоздаёт расчёт карты.",775,13,muted);
+        return changed?UIAction::ApplyOptimizations:UIAction::None;
+    }
+    if(button({25,25,150,32},"НАСТРОЙКИ")) {settingsOpen_=true;optimizationPage_=false;clearFocus();return UIAction::None;}
     UIAction action=UIAction::None;
     for(int i=0;i<2;++i) {
         Rectangle card{cx-380+i*395,180,365,190};bool selected=mapChoice_==MapType(i);

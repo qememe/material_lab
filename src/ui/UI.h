@@ -3,7 +3,7 @@
 #include <string>
 #include <filesystem>
 namespace lab {
-enum class UIAction { None, Save, Load, Clear, Start, Pause, Reset, Edit, Step, Fit, Menu, Continue, CreateVoid, CreateEarth, Quit, Recalculate, ToySave, ToyPlace };
+enum class UIAction { None, Save, Load, Clear, Start, Pause, Reset, Edit, Step, Fit, Menu, Continue, CreateVoid, CreateEarth, Quit, Recalculate, ToySave, ToyPlace, ApplyOptimizations };
 class UI {
 public:
     UI();
@@ -18,7 +18,7 @@ public:
     void refreshToys();
     bool textActive() const {return !activeField_.empty();}
     UIAction draw(SimulationState& state,Camera& camera,DebugOptions& debug);
-    UIAction drawMenu(bool hasMap);
+    UIAction drawMenu(bool hasMap,Optimizations& options);
     void refreshMaps();
     void clearFocus() {activeField_.clear();}
     void text(const std::string& value,float x,float y,float size,Color color) const;
@@ -35,6 +35,7 @@ private:
     std::vector<std::filesystem::path> toys_;
     std::size_t toyPage_{};
     bool speedKmh_{};
+    bool settingsOpen_{},optimizationPage_{};
     UIAction drawToybox(const SimulationState& state);
     void panel(Rectangle rect,Color color) const;
     bool button(Rectangle rect,const std::string& label,bool selected=false,bool enabled=true,const std::string& tip="");

@@ -10,6 +10,39 @@ namespace {
 void check(bool value,const char* msg) {if(!value) throw std::runtime_error(msg);}
 void run(PhysicsWorld& w,int steps=240) {for(int i=0;i<steps;++i) w.step();for(auto& p:w.particles) check(finite(p.position)&&finite(p.velocity),"Non-finite physics");}
 void rectangle(PhysicsWorld& w,int x,int y,int width,int height,MaterialType m,bool pin=false) {for(int j=0;j<height;++j) for(int i=0;i<width;++i) w.addCell({float(x+i),float(y+j)},m,pin);}
+void testOptimizationSwitches() {
+    PhysicsWorld source;source.config.gravity=9.81f;source.config.adaptiveDetail=false;
+    rectangle(source,-5,0,10,3,MaterialType::Soil);
+    for(auto& p:source.particles) {p.worldCell=true;p.setFreeze(FreezeMode::UntilContact);}
+    auto projectile=source.addCell({0,-3},MaterialType::Steel);source.particles[projectile].velocity={0,15};source.rebuildBonds();
+    auto optimized=source,reference=source;reference.config.optimizations.sleepingTerrain=false;reference.config.optimizations.cachedBonds=false;
+    run(optimized,80);run(reference,80);
+    check(!optimized.particles[5].untilContact,"Optimized terrain failed to wake");
+    for(std::size_t i=0;i<source.particles.size();++i) {
+        check(length(optimized.particles[i].position-reference.particles[i].position)<.01f,"Terrain optimization changed cold impact");
+    }
+    // Public topology can change without a dedicated mutation API.
+    optimized=source;reference=source;reference.config.optimizations.cachedBonds=false;
+    optimized.step();reference.step();optimized.bonds[0].broken=reference.bonds[0].broken=true;
+    std::swap(optimized.bonds[1].b,optimized.bonds[2].b);std::swap(reference.bonds[1].b,reference.bonds[2].b);
+    run(optimized,10);run(reference,10);
+    for(std::size_t i=0;i<source.particles.size();++i) check(length(optimized.particles[i].position-reference.particles[i].position)<1e-6f,"Stale cached topology");
+    PhysicsWorld flying;flying.addCell({0,0},MaterialType::Steel);flying.particles[0].velocity={5,0};
+    for(bool buffered:{false,true}) for(bool background:{false,true}) {
+        flying.config.optimizations.bufferedTimeline=buffered;flying.config.optimizations.backgroundCalculation=background;
+        Timeline timeline(flying,.1);timeline.advance(true);timeline.advance(false);
+        check(!timeline.baking()&&timeline.error().empty()&&timeline.lastFrame()==3,"Timeline option calculation failed");
+        PhysicsWorld frame;timeline.restore(3,frame);auto position=frame.particles[0].position;
+        timeline.restore(0,frame);check(frame.time==0,"Timeline option rewind failed");
+        timeline.restore(3,frame);timeline.restore(3,frame);
+        check(length(frame.particles[0].position-position)<1e-6f,"Timeline cached frame changed");
+    }
+    {Timeline cancelled(flying,120);cancelled.advance(true);cancelled.pauseCalculation(true);} // Stop and join before releasing frame storage.
+    SimulationState state;state.world=flying;state.timelineDuration=.1f;state.calculate();state.advance(.1,false);
+    auto options=state.world.config.optimizations;options.backgroundCalculation=!options.backgroundCalculation;
+    state.setOptimizations(options);
+    check(state.mode==Mode::Editor&&state.world.config.optimizations==options&&state.hasTimeline(),"Settings did not rebuild source timeline");
+}
 void testFuse() {
     PhysicsWorld w;w.addCell({0,0},MaterialType::Fuse);w.addCell({3,0},MaterialType::Steel,true);w.particles[0].velocity={35,0};run(w,60);
     check(w.stats.detonations==1&&!w.particles[0].active,"Fuse must trigger on strong steel contact");
@@ -359,6 +392,7 @@ int main(int argc,char** argv) {try {
     if(argc==2&&std::string(argv[1])=="--benchmark-active") {benchmarkActive();return 0;}
     if(argc==2&&std::string(argv[1])=="--diagnose-clamp") {diagnoseClampedSteel();return 0;}
     if(argc==2&&std::string(argv[1])=="--diagnose-steel") {testSteelImpactStability();return 0;}
+    testOptimizationSwitches();std::cout<<"PASS independent optimizations / topology invalidation / threaded timeline / cancellation\n";
     testFuse();std::cout<<"PASS fuse / explosive gating\n";
     testMaterials();std::cout<<"PASS material contrast / fracture / penetration\n";
     testDeformationAndRod();std::cout<<"PASS beam plasticity / normal rod impact\n";

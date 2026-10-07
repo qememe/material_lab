@@ -121,11 +121,7 @@ void PhysicsWorld::step(float dt) {
     debugContacts.clear();
     particleLevels_.resize(particles.size());
     for(ParticleId i=0;i<particles.size();++i) particleLevels_[i]=static_cast<unsigned char>(detailLevel(particles[i]));
-    bondOffsets_.assign(particles.size()+1,0);
-    for(auto& b:bonds) {++bondOffsets_[b.a+1];++bondOffsets_[b.b+1];}
-    for(std::size_t i=1;i<bondOffsets_.size();++i) bondOffsets_[i]+=bondOffsets_[i-1];
-    bondCursor_=bondOffsets_;incidentBonds_.resize(bonds.size()*2);
-    for(std::size_t i=0;i<bonds.size();++i) {incidentBonds_[bondCursor_[bonds[i].a]++]=i;incidentBonds_[bondCursor_[bonds[i].b]++]=i;}
+    prepareTopology();
     for(int sub=0;sub<substeps;++sub) {
         buildIslands();
         for(auto& b:bonds) b.lambda=0;
@@ -147,7 +143,7 @@ void PhysicsWorld::step(float dt) {
             // Only the first contact pass transfers heat. Refresh compliance
             // once after that pass; it stays constant for the remaining solves.
             if(iteration<=1) prepareBonds(h);
-            solveBonds(); buildDetailGrid(); collide(h,iteration==0);
+            solveBonds(); prepareTerrainSleep(); buildDetailGrid(); collide(h,iteration==0);
         }
         updateDeformation(h);
         for(auto& p:particles) if(p.active&&p.inverseMass()>0) p.velocity=(p.position-p.previousPosition)/h;
@@ -206,7 +202,39 @@ void PhysicsWorld::launch(const std::vector<ParticleId>& ids,Vec2 velocity,Vec2 
     omega=std::clamp(omega,-30.f,30.f);
     for(auto id:ids) if(id<particles.size()) { auto& p=particles[id]; if(p.inverseMass()==0) continue; Vec2 r=p.position-center; p.velocity=velocity+Vec2{-r.y,r.x}*omega; }
 }
+void PhysicsWorld::prepareTerrainSleep() {
+    sleepingTerrain_.assign(particles.size(),0);awakeLevels_=0;
+    for(ParticleId i=0;i<particles.size();++i) {
+        const auto& p=particles[i];
+        sleepingTerrain_[i]=config.optimizations.sleepingTerrain&&p.active&&p.worldCell&&p.inverseMass()==0
+            &&p.liquidFraction==0&&p.temperature==config.ambientTemperature;
+        if(p.active&&!sleepingTerrain_[i]) awakeLevels_|=1u<<particleLevels_[i];
+    }
+}
+void PhysicsWorld::prepareTopology() {
+    bool same=config.optimizations.cachedBonds&&cachedEndpoints_.size()==bonds.size()
+        &&bondOffsets_.size()==particles.size()+1;
+    if(same) for(std::size_t i=0;i<bonds.size();++i)
+        if(cachedEndpoints_[i]!=std::pair{bonds[i].a,bonds[i].b}) {same=false;break;}
+    if(same) return;
+    bondOffsets_.assign(particles.size()+1,0);
+    for(auto& b:bonds) {++bondOffsets_[b.a+1];++bondOffsets_[b.b+1];}
+    for(std::size_t i=1;i<bondOffsets_.size();++i) bondOffsets_[i]+=bondOffsets_[i-1];
+    bondCursor_=bondOffsets_;incidentBonds_.resize(bonds.size()*2);
+    for(std::size_t i=0;i<bonds.size();++i) {incidentBonds_[bondCursor_[bonds[i].a]++]=i;incidentBonds_[bondCursor_[bonds[i].b]++]=i;}
+    cachedEndpoints_.clear();cachedEndpoints_.reserve(bonds.size());
+    for(const auto& b:bonds) cachedEndpoints_.emplace_back(b.a,b.b);
+}
 void PhysicsWorld::buildIslands() {
+    bool same=config.optimizations.cachedBonds&&islandActive_.size()==particles.size()
+        &&islandBroken_.size()==bonds.size()&&islandEndpoints_==cachedEndpoints_;
+    if(same) for(std::size_t i=0;i<particles.size();++i) if(islandActive_[i]!=particles[i].active) {same=false;break;}
+    if(same) for(std::size_t i=0;i<bonds.size();++i) if(islandBroken_[i]!=bonds[i].broken) {same=false;break;}
+    if(same) return;
+    islandEndpoints_=cachedEndpoints_;
+    islandActive_.resize(particles.size());islandBroken_.resize(bonds.size());
+    for(std::size_t i=0;i<particles.size();++i) islandActive_[i]=particles[i].active;
+    for(std::size_t i=0;i<bonds.size();++i) islandBroken_[i]=bonds[i].broken;
     collisionIsland_.resize(particles.size());std::iota(collisionIsland_.begin(),collisionIsland_.end(),ParticleId(0));
     islandSize_.assign(particles.size(),1);
     auto root=[&](ParticleId id) {

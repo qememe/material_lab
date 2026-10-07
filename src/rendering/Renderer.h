@@ -16,6 +16,9 @@ private:
     mutable std::vector<Color> surfacePixels_;
     mutable std::vector<float> gaussianX_,gaussianY_;
     mutable Texture2D surfaceTexture_{};
+    mutable RenderTexture2D terrainBonds_{},terrainParticles_{};
+    mutable std::uint64_t terrainKey_{},liquidKey_{};
+    mutable bool terrainValid_{},liquidValid_{};
     void drawLiquidSurface(const SimulationState& state,const Camera& camera) const;
 };
 }

@@ -3,12 +3,17 @@
 #include <stdexcept>
 #include <chrono>
 #include <tuple>
+#include <fstream>
 namespace lab {
 Application::Application() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE|FLAG_MSAA_4X_HINT);
     InitWindow(1600,900,"Material Lab | V2 / Термомеханика материалов");
     if(!IsWindowReady()) throw std::runtime_error("Не удалось открыть графическое окно");
     SetWindowMinSize(1380,900);SetTargetFPS(120);SetExitKey(KEY_NULL);
+    std::ifstream settings("optimizations.cfg");Optimizations loaded;
+    if(settings>>loaded.sleepingTerrain>>loaded.cachedBonds>>loaded.bufferedTimeline
+        >>loaded.backgroundCalculation>>loaded.cachedTerrainDrawing>>loaded.cachedLiquidDrawing) optimizations_=loaded;
+    state_.setOptimizations(optimizations_);
     ui_=std::make_unique<UI>();
     ui_->refreshMaps();
     ui_->message="Выберите тип карты или загрузите сохранение.";
@@ -67,16 +72,27 @@ void Application::action(UIAction a) {
     case UIAction::Menu:
         if(state_.editor.drawing()) state_.editor.cancelStroke(state_.world);
         if(state_.mode==Mode::Running) state_.mode=Mode::Paused;
+        state_.pauseCalculation(true);
         mainMenu_=true;ui_->help=false;ui_->toyboxOpen=false;toyPreview_.reset();ui_->clearFocus();ui_->refreshMaps();break;
-    case UIAction::Continue: if(hasMap_) {mainMenu_=false;ui_->clearFocus();}break;
+    case UIAction::Continue: if(hasMap_) {state_.pauseCalculation(false);mainMenu_=false;ui_->clearFocus();}break;
     case UIAction::CreateVoid:
     case UIAction::CreateEarth:
         state_.newMap(a==UIAction::CreateEarth?MapType::Earth:MapType::Void);
         mainMenu_=false;hasMap_=true;clearConfirmUntil_=0;camera_.reset();ui_->clearFocus();ui_->help=false;
         ui_->message=a==UIAction::CreateEarth?"Карта «Земля»: рыхлый грунт, бедрок и гравитация. Рисуйте объекты над полом.":"Карта «Пустота»: вакуум, без пола и гравитации.";break;
+    case UIAction::ApplyOptimizations: {
+        std::ofstream settings("optimizations.cfg",std::ios::trunc);
+        settings<<optimizations_.sleepingTerrain<<' '<<optimizations_.cachedBonds<<' '
+            <<optimizations_.bufferedTimeline<<' '<<optimizations_.backgroundCalculation<<' '
+            <<optimizations_.cachedTerrainDrawing<<' '<<optimizations_.cachedLiquidDrawing<<'\n';
+        settings.flush();
+        ui_->message=settings?"Настройки оптимизации сохранены.":"Не удалось сохранить настройки оптимизации.";
+        break;
+    }
     case UIAction::Quit:exitRequested_=true;break;
     case UIAction::None:break;
     }
+    state_.setOptimizations(optimizations_);
 }
 void Application::handleInput() {
     Vec2 mouse{float(GetMouseX()),float(GetMouseY())};bool canvas=camera_.viewport.contains(mouse);
@@ -128,8 +144,8 @@ void Application::handleInput() {
     }
     previousMouse_=mouse;
 }
-int Application::run(int smokeFrames,const std::string& scene,const std::string& screenshot,bool uiTest,bool earthTest,bool thermalTest,int renderBenchmark,bool workflowTest) {
-    legacyUiTest_=uiTest&&!workflowTest;
+int Application::run(int smokeFrames,const std::string& scene,const std::string& screenshot,bool uiTest,bool earthTest,bool thermalTest,int renderBenchmark,bool workflowTest,bool optimizationTest) {
+    legacyUiTest_=uiTest&&!workflowTest&&!optimizationTest;
     if(!scene.empty()) {ui_->scenePath=scene;if(!loadScene(scene,state_,ui_->message)) throw std::runtime_error(ui_->message);mainMenu_=false;hasMap_=true;}
     if(uiTest) {ui_->scenePath=earthTest?"build/earth-validation.scene":"build/ui-validation.scene";smokeFrames=160;}
     if(thermalTest) ui_->scenePath="build/v2-thermal-validation.scene";
@@ -141,6 +157,7 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
         }
         state_.world.rebuildBonds();
     }
+    state_.setOptimizations(optimizations_);
     std::size_t workflowCells=0;Particle workflowFrame;
     if(workflowTest) {smokeFrames=180;ui_->toyName="__workflow_"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());ui_->scenePath="build/workflow-validation.scene";}
     auto benchmarkStart=std::chrono::steady_clock::now();
@@ -155,7 +172,26 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
             auto move=[&](int x,int y){event(7,x,y);};
             auto click=[&](int x,int y){move(x,y);event(6,MOUSE_BUTTON_LEFT);};
             auto up=[&](){event(5,MOUSE_BUTTON_LEFT);};
-            if(workflowTest) switch(frames) {
+            if(optimizationTest) {
+                if(frames==1) click(85,40);
+                else if(frames==2||frames==6) up();
+                else if(frames==5) click(520,240);
+                else if(frames>=10&&frames<34) {
+                    int row=(frames-10)/4;
+                    if((frames-10)%4==0) click(800,310+row*76);
+                    else if((frames-10)%4==1) up();
+                }
+                else if(frames==36) {
+                    if(optimizations_!=Optimizations{false,false,false,false,false,false}) throw std::runtime_error("Settings checkboxes failed to disable all optimizations");
+                }
+                else if(frames>=40&&frames<64) {
+                    int row=(frames-40)/4;
+                    if((frames-40)%4==0) click(800,310+row*76);
+                    else if((frames-40)%4==1) up();
+                }
+                else if(frames==66&&optimizations_!=Optimizations{}) throw std::runtime_error("Settings checkboxes failed to enable all optimizations");
+            }
+            else if(workflowTest) switch(frames) {
             case 1:click(800,410);break;case 2:up();break;
             case 4:state_.timelineDuration=.2f;break;
             case 5:click(22,495);break;case 6:up();break;
@@ -270,7 +306,7 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
         handleInput();if(!mainMenu_) state_.advance(uiTest?1.0/60:GetFrameTime(),!uiTest);
         BeginDrawing();ClearBackground({13,19,29,255});
         UIAction requested;
-        if(mainMenu_) requested=ui_->drawMenu(hasMap_);
+        if(mainMenu_) requested=ui_->drawMenu(hasMap_,optimizations_);
         else {
             renderer_.drawWorld(state_,camera_,{float(GetMouseX()),float(GetMouseY())});
             if(toyPreview_) {
@@ -290,6 +326,7 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
             break;
         }
     }
+    if(optimizationTest) {TraceLog(LOG_INFO,"PASS: settings menu / six independent checkboxes");return 0;}
     if(uiTest) {
         if(workflowTest) {
             if(state_.baking()||state_.timelineFailed()||!std::filesystem::exists(ui_->scenePath)) throw std::runtime_error("Workflow GUI final validation failed");

@@ -3,6 +3,10 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <optional>
+#include <condition_variable>
 namespace lab {
 // Private, temporary native binary snapshots. Never used for imported files.
 class Timeline {
@@ -15,11 +19,12 @@ public:
     Timeline& operator=(const Timeline&)=delete;
     void advance(bool limitWork=true);
     void restore(std::size_t frame,PhysicsWorld& destination);
-    bool baking() const {return frames_.size()<=totalFrames_&&error.empty();}
-    double calculatedSeconds() const {return double(frames_.size()-1)/framesPerSecond;}
-    std::size_t lastFrame() const {return frames_.size()-1;}
+    void pauseCalculation(bool paused);
+    bool baking() const;
+    double calculatedSeconds() const;
+    std::size_t lastFrame() const;
     std::size_t targetFrame() const {return totalFrames_;}
-    std::string error;
+    std::string error() const;
 private:
     struct Frame {std::streamoff offset;};
     PhysicsWorld calculation_;
@@ -31,6 +36,14 @@ private:
     std::size_t totalFrames_{};
     unsigned steps_{};
     std::uint64_t bytes_{};
+    mutable std::mutex mutex_;
+    std::jthread worker_;
+    std::condition_variable_any resume_;
+    bool paused_{};
+    std::string error_;
+    std::optional<PhysicsWorld> restored_;
+    std::size_t restoredFrame_{std::size_t(-1)};
+    void bake(bool limitWork,std::stop_token stop={});
     void record();
 };
 }

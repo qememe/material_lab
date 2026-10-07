@@ -10,6 +10,8 @@ add_library(material_physics
     src/physics/Collision.cpp src/physics/Deformation.cpp
     src/physics/Fracture.cpp src/physics/Explosion.cpp src/physics/Thermal.cpp
     src/editor/Editor.cpp src/app/SimulationState.cpp src/app/SceneIO.cpp src/app/Map.cpp src/app/Timeline.cpp)
+find_package(Threads REQUIRED)
+target_link_libraries(material_physics PUBLIC Threads::Threads)
 target_include_directories(material_physics PUBLIC src)
 target_compile_options(material_physics PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
 if(MATERIAL_LAB_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

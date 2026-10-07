@@ -8,9 +8,10 @@ public:
     ~Application();
     Application(const Application&)=delete;
     Application& operator=(const Application&)=delete;
-    int run(int smokeFrames=0,const std::string& scene="",const std::string& screenshot="",bool uiTest=false,bool earthTest=false,bool thermalTest=false,int renderBenchmark=-1,bool workflowTest=false);
+    int run(int smokeFrames=0,const std::string& scene="",const std::string& screenshot="",bool uiTest=false,bool earthTest=false,bool thermalTest=false,int renderBenchmark=-1,bool workflowTest=false,bool optimizationTest=false);
 private:
     SimulationState state_;
+    Optimizations optimizations_;
     Camera camera_;
     Renderer renderer_;
     std::unique_ptr<UI> ui_;

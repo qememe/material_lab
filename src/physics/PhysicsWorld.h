@@ -1,7 +1,9 @@
 #pragma once
 #include "Particle.h"
+#include "app/Optimizations.h"
 #include <unordered_map>
 #include <vector>
+#include <utility>
 namespace lab {
 struct PhysicsConfig {
     static constexpr float fixedDt=1.f/240.f;
@@ -20,6 +22,7 @@ struct PhysicsConfig {
     float ambientTemperature{20};
     bool thermalEnabled{true}, adaptiveDetail{true};
     float sampleSpacing{1};
+    Optimizations optimizations;
 };
 struct Contact { ParticleId a,b; Vec2 normal; float closingSpeed; };
 struct Blast { Vec2 center; float radius, age{}, strength; };
@@ -61,6 +64,11 @@ private:
     std::vector<ParticleId> fuseQueue_;
     std::vector<std::size_t> incidentBonds_,bondOffsets_,bondCursor_;
     std::vector<ParticleId> collisionIsland_,islandSize_;
+    std::vector<std::pair<ParticleId,ParticleId>> cachedEndpoints_,islandEndpoints_;
+    std::vector<unsigned char> islandActive_,islandBroken_,sleepingTerrain_;
+    unsigned awakeLevels_{};
+    void prepareTerrainSleep();
+    void prepareTopology();
     void buildIslands();
     void wakeOnContact(ParticleId a,ParticleId b);
     void buildGrid();

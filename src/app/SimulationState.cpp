@@ -14,6 +14,13 @@ bool SimulationState::calculate(bool preview) {
         return true;
     } catch(const std::exception& ex) {timelineMessage=ex.what();return false;}
 }
+void SimulationState::setOptimizations(const Optimizations& options) {
+    if(world.config.optimizations==options) return;
+    bool existed=hasTimeline();
+    if(mode!=Mode::Editor) reset(true);
+    timeline_.reset();world.config.optimizations=options;initial_.config.optimizations=options;
+    if(existed) calculate(false);
+}
 void SimulationState::invalidateTimeline() {
     bool existed=hasTimeline();timeline_.reset();timelineCursor=0;
     if(existed&&mode==Mode::Editor) calculate(false);
@@ -47,7 +54,7 @@ void SimulationState::advance(double realSeconds,bool limitFrameWork) {
     if(timeline_) {
         bool calculating=timeline_->baking();
         timeline_->advance(limitFrameWork);
-        timelineMessage=!timeline_->error.empty()?timeline_->error:timeline_->baking()?"Первый проход: расчёт кадров таймлайна.":"Кадры рассчитаны. Перемотка и воспроизведение используют кэш.";
+        timelineMessage=!timeline_->error().empty()?timeline_->error():timeline_->baking()?"Первый проход: расчёт кадров таймлайна.":"Кадры рассчитаны. Перемотка и воспроизведение используют кэш.";
         if(mode==Mode::Running) {
             timelineCursor=calculating?calculatedSeconds():std::min(timelineCursor+realSeconds*timeScale,calculatedSeconds());
             auto frame=std::min(std::size_t(std::llround(timelineCursor*Timeline::framesPerSecond)),timeline_->lastFrame());
