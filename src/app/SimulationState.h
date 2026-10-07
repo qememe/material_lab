@@ -19,6 +19,7 @@ public:
     bool calculate(bool preview=true);
     void invalidateTimeline();
     void setOptimizations(const Optimizations& options);
+    void setExplosionPower(float power);
     void pauseCalculation(bool paused) {if(timeline_) timeline_->pauseCalculation(paused);}
     bool hasTimeline() const {return bool(timeline_);}
     bool baking() const {return timeline_&&timeline_->baking();}

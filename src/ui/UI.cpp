@@ -131,7 +131,7 @@ UIAction UI::drawToybox(const SimulationState& state) {
     BeginScissorMode(int(x),int(y+450),515,35);text(message,x,y+453,12,muted);EndScissorMode();
     return UIAction::None;
 }
-UIAction UI::drawMenu(bool hasMap,Optimizations& options) {
+UIAction UI::drawMenu(bool hasMap,Optimizations& options,float& explosionPower) {
     mouse_={float(GetMouseX()),float(GetMouseY())};press_=IsMouseButtonPressed(MOUSE_BUTTON_LEFT);release_=IsMouseButtonReleased(MOUSE_BUTTON_LEFT);down_=IsMouseButtonDown(MOUSE_BUTTON_LEFT);tooltip_.clear();
     float width=float(GetScreenWidth()),height=float(GetScreenHeight()),cx=width*.5f;
     panel({0,0,width,height},{13,19,29,255});
@@ -147,7 +147,19 @@ UIAction UI::drawMenu(bool hasMap,Optimizations& options) {
             else settingsOpen_=false;
             clearFocus();return UIAction::None;
         }
-        if(!optimizationPage_) {centered("Выберите раздел настроек.",310,16,muted);return UIAction::None;}
+        if(!optimizationPage_) {
+            centered("ВЗРЫВЫ",310,22,accent);
+            centered("Связный заряд создаёт один взрыв в центре массы.",355,16,textColor);
+            float before=explosionPower;
+            text("Сила взрыва",cx-300,410,18,textColor);
+            number({cx+170,400,130,34},"explosionPower",explosionPower,PhysicsConfig::minExplosionPower,PhysicsConfig::maxExplosionPower,true,2);
+            slider({cx-300,470,600,16},explosionPower,PhysicsConfig::minExplosionPower,PhysicsConfig::maxExplosionPower);
+            centered("0,1 — 3,0: импульс, нагрев и разрушение. По умолчанию: 1,0.",515,14,muted);
+            if(button({cx-100,560,200,34},"СБРОСИТЬ СИЛУ")) {explosionPower=1.f;clearFocus();}
+            centered("Сохраняется автоматически и применяется ко всем картам.",630,14,muted);
+            centered("Изменение пересоздаёт расчёт текущей карты.",660,14,muted);
+            return before!=explosionPower?UIAction::ApplyExplosionPower:UIAction::None;
+        }
         struct Entry {const char* name;const char* description;bool* value;};
         Entry entries[]{
             {"Спящий грунт","Пропуск поиска контактов между спокойными ячейками грунта.",&options.sleepingTerrain},

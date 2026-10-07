@@ -47,11 +47,49 @@ void testFuse() {
     PhysicsWorld w;w.addCell({0,0},MaterialType::Fuse);w.addCell({3,0},MaterialType::Steel,true);w.particles[0].velocity={35,0};run(w,60);
     check(w.stats.detonations==1&&!w.particles[0].active,"Fuse must trigger on strong steel contact");
     PhysicsWorld chain;chain.addCell({0,0},MaterialType::Fuse);chain.addCell({0,1},MaterialType::Explosive);chain.addCell({0,2},MaterialType::Explosive);chain.addCell({3,0},MaterialType::Steel,true);chain.rebuildBonds();
-    chain.launch({0,1,2},{35,0},{0,1});run(chain,80);check(chain.stats.detonations==3,"Fuse must initiate nearby explosive chain");
+    chain.launch({0,1,2},{35,0},{0,1});run(chain,80);check(chain.stats.detonations==2,"Fuse must initiate one connected charge");
     PhysicsWorld calm;calm.addCell({0,0},MaterialType::Fuse);calm.addCell({.9f,0},MaterialType::Explosive);run(calm,20);check(calm.stats.detonations==0,"Calm fuse/explosive contact detonated");
     PhysicsWorld only;only.addCell({0,0},MaterialType::Explosive);only.addCell({3,0},MaterialType::Steel,true);only.particles[0].velocity={140,0};run(only,80);check(only.stats.detonations==0&&only.particles[0].active,"Mechanical impact detonated explosive");
     PhysicsWorld soft;soft.addCell({0,0},MaterialType::Fuse);soft.addCell({3,0},MaterialType::Explosive,true);soft.particles[0].velocity={80,0};run(soft,80);check(soft.stats.detonations==0,"Fuse triggered on explosive contact");
 }
+
+void testConnectedExplosions() {
+    auto detonate=[](float power,int count,float spacing=1.f,bool bonds=true,int fuses=1) {
+        PhysicsWorld w;w.config.adaptiveDetail=false;w.config.explosionPower=power;
+        for(int i=0;i<fuses;++i) {
+            auto fuse=w.addCell({float(-i),-1.1f},MaterialType::Fuse);
+            w.particles[fuse].velocity={0,35};w.addCell({float(-i),0},MaterialType::Bedrock);
+        }
+        for(int i=0;i<count;++i) w.addCell({1.f+i*spacing,-1.1f},MaterialType::Explosive,true,PhysicsConfig::particleRadius*std::min(spacing,1.f));
+        w.addCell({1,-4},MaterialType::Steel);
+        if(bonds) w.rebuildBonds();
+        run(w,3);return w;
+    };
+    for(bool bonds:{false,true}) {
+        auto w=detonate(1,7,1,bonds,2);
+        check(w.stats.detonations==3&&w.blasts.size()==3,"Connected charge fired more than once with multiple fuses");
+        for(const auto& p:w.particles) if(p.material==MaterialType::Explosive) check(!p.active&&p.activated,"Charge left active explosive pixels");
+        check(std::abs(w.blasts.back().center.x-4.f)<1e-5f,"Charge blast not at mass center");
+        auto detonations=w.stats.detonations;run(w,10);check(w.stats.detonations==detonations,"Consumed charge detonated again");
+    }
+    auto separated=detonate(1,2,3,false);
+    check(separated.stats.detonations==2&&separated.particles[separated.particles.size()-2].active,"Separated charge initiated without a fuse signal");
+    auto coarse=detonate(1,1),fine=detonate(1,4,.5f);
+    check(coarse.stats.detonations==2&&fine.stats.detonations==2,"Fine charge detonated per pixel");
+    check(std::abs(coarse.blasts.back().radius-fine.blasts.back().radius)<1e-5f&&std::abs(coarse.blasts.back().strength-fine.blasts.back().strength)<1e-5f,"Equal charge mass changed power with sample count");
+    auto low=detonate(.5f,1),high=detonate(2.f,1);
+    check(std::abs(high.blasts.back().strength/low.blasts.back().strength-4.f)<1e-5f,"Explosion power did not scale blast strength");
+    const auto& weak=low.particles.back();const auto& strong=high.particles.back();
+    check(length(strong.velocity)>length(weak.velocity)*3.5f,"Power setting did not scale actual blast impulse");
+    check(strong.temperature>weak.temperature&&strong.accumulatedDamage>weak.accumulatedDamage,"Power setting did not scale heat and damage");
+    check(coarse.particles.back().active&&coarse.particles.back().liquidFraction==0,"Default charge melted steel surroundings");
+    SimulationState state;state.world=coarse;state.world.config.explosionPower=1;state.timelineDuration=.1f;
+    state.calculate(false);state.seek(0);state.setExplosionPower(.5f);
+    check(state.mode==Mode::Editor&&state.hasTimeline()&&state.world.config.explosionPower==.5f,"Power change failed to rebuild timeline from source");
+    state.start();state.setExplosionPower(2);state.reset(true);
+    check(state.world.config.explosionPower==2,"Power change lost after reset");
+}
+
 void testMaterials() {
     PhysicsWorld weak;rectangle(weak,0,0,3,3,MaterialType::Plastic);rectangle(weak,10,-8,5,20,MaterialType::Steel,true);weak.rebuildBonds();
     weak.launch(weak.component(0),{25,0},{1,1});run(weak);
@@ -394,6 +432,7 @@ int main(int argc,char** argv) {try {
     if(argc==2&&std::string(argv[1])=="--diagnose-steel") {testSteelImpactStability();return 0;}
     testOptimizationSwitches();std::cout<<"PASS independent optimizations / topology invalidation / threaded timeline / cancellation\n";
     testFuse();std::cout<<"PASS fuse / explosive gating\n";
+    testConnectedExplosions();std::cout<<"PASS connected charges / single blast / mass scaling / power / timeline\n";
     testMaterials();std::cout<<"PASS material contrast / fracture / penetration\n";
     testDeformationAndRod();std::cout<<"PASS beam plasticity / normal rod impact\n";
     testMetalYieldAndUnloading();std::cout<<"PASS metal yield / unloaded permanent bend / elastic limit / axial damping\n";

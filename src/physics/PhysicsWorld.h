@@ -15,8 +15,10 @@ struct PhysicsConfig {
     // Tunable fictional impact and detonation coefficients (no physical units).
     static constexpr float impactEnergyScale=18.f, impactDamageRate=.15f;
     static constexpr float fuseTriggerSpeed=8.f, fuseRadius=2.4f, fuseImpulse=3.f;
-    static constexpr float explosiveRadius=7.f, explosiveImpulse=48.f;
+    static constexpr float explosiveRadius=5.f, explosiveImpulse=12.f;
     static constexpr float explosiveSignalRadius=1.65f;
+    static constexpr float minExplosionPower=.1f, maxExplosionPower=3.f;
+    float explosionPower{1.f};
     float gravity{};
     float airDrag{}; // Environmental drag; zero in vacuum.
     float ambientTemperature{20};
@@ -87,7 +89,7 @@ private:
     void applyImpact(ParticleId a,ParticleId b,Vec2 normal,float speed);
     void damageBonds(ParticleId id,float amount);
     void processExplosions();
-    void explode(ParticleId id,bool explosive);
+    void explode(const std::vector<ParticleId>& charge,bool explosive);
     void exchangeHeat(ParticleId a,ParticleId b,float dt);
     void updateThermal(float dt);
     void refineParticles();

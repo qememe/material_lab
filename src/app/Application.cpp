@@ -14,6 +14,9 @@ Application::Application() {
     if(settings>>loaded.sleepingTerrain>>loaded.cachedBonds>>loaded.bufferedTimeline
         >>loaded.backgroundCalculation>>loaded.cachedTerrainDrawing>>loaded.cachedLiquidDrawing) optimizations_=loaded;
     state_.setOptimizations(optimizations_);
+    std::ifstream explosionSettings("explosions.cfg");float savedPower;
+    if(explosionSettings>>savedPower&&std::isfinite(savedPower)) explosionPower_=std::clamp(savedPower,PhysicsConfig::minExplosionPower,PhysicsConfig::maxExplosionPower);
+    state_.setExplosionPower(explosionPower_);
     ui_=std::make_unique<UI>();
     ui_->refreshMaps();
     ui_->message="Выберите тип карты или загрузите сохранение.";
@@ -89,10 +92,17 @@ void Application::action(UIAction a) {
         ui_->message=settings?"Настройки оптимизации сохранены.":"Не удалось сохранить настройки оптимизации.";
         break;
     }
+    case UIAction::ApplyExplosionPower: {
+        std::ofstream settings("explosions.cfg",std::ios::trunc);
+        settings<<explosionPower_<<'\n';settings.flush();
+        ui_->message=settings?"Сила взрыва сохранена.":"Не удалось сохранить силу взрыва.";
+        break;
+    }
     case UIAction::Quit:exitRequested_=true;break;
     case UIAction::None:break;
     }
     state_.setOptimizations(optimizations_);
+    state_.setExplosionPower(explosionPower_);
 }
 void Application::handleInput() {
     Vec2 mouse{float(GetMouseX()),float(GetMouseY())};bool canvas=camera_.viewport.contains(mouse);
@@ -158,6 +168,7 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
         state_.world.rebuildBonds();
     }
     state_.setOptimizations(optimizations_);
+    state_.setExplosionPower(explosionPower_);
     std::size_t workflowCells=0;Particle workflowFrame;
     if(workflowTest) {smokeFrames=180;ui_->toyName="__workflow_"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());ui_->scenePath="build/workflow-validation.scene";}
     auto benchmarkStart=std::chrono::steady_clock::now();
@@ -190,6 +201,16 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
                     else if((frames-40)%4==1) up();
                 }
                 else if(frames==66&&optimizations_!=Optimizations{}) throw std::runtime_error("Settings checkboxes failed to enable all optimizations");
+                else if(frames==70) click(1070,240);
+                else if(frames==71||frames==76||frames==86) up();
+                else if(frames==75) click(800,478);
+                else if(frames==80) {
+                    if(explosionPower_<1.5f||state_.world.config.explosionPower!=explosionPower_) throw std::runtime_error("Explosion slider failed to apply power");
+                    std::ifstream saved("explosions.cfg");float power=0;
+                    if(!(saved>>power)||std::abs(power-explosionPower_)>.0001f) throw std::runtime_error("Explosion power was not saved");
+                }
+                else if(frames==85) click(800,575);
+                else if(frames==90&&explosionPower_!=1.f) throw std::runtime_error("Explosion power reset failed");
             }
             else if(workflowTest) switch(frames) {
             case 1:click(800,410);break;case 2:up();break;
@@ -303,10 +324,10 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
                 if(!falling) throw std::runtime_error("Объекты не падают на карте «Земля»");
             }
         }
-        handleInput();if(!mainMenu_) state_.advance(uiTest?1.0/60:GetFrameTime(),!uiTest);
+        handleInput();state_.setExplosionPower(explosionPower_);if(!mainMenu_) state_.advance(uiTest?1.0/60:GetFrameTime(),!uiTest);
         BeginDrawing();ClearBackground({13,19,29,255});
         UIAction requested;
-        if(mainMenu_) requested=ui_->drawMenu(hasMap_,optimizations_);
+        if(mainMenu_) requested=ui_->drawMenu(hasMap_,optimizations_,explosionPower_);
         else {
             renderer_.drawWorld(state_,camera_,{float(GetMouseX()),float(GetMouseY())});
             if(toyPreview_) {
@@ -326,7 +347,7 @@ int Application::run(int smokeFrames,const std::string& scene,const std::string&
             break;
         }
     }
-    if(optimizationTest) {TraceLog(LOG_INFO,"PASS: settings menu / six independent checkboxes");return 0;}
+    if(optimizationTest) {TraceLog(LOG_INFO,"PASS: settings menu / six independent checkboxes / explosion power and persistence");return 0;}
     if(uiTest) {
         if(workflowTest) {
             if(state_.baking()||state_.timelineFailed()||!std::filesystem::exists(ui_->scenePath)) throw std::runtime_error("Workflow GUI final validation failed");

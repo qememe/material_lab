@@ -3,7 +3,7 @@
 #include <string>
 #include <filesystem>
 namespace lab {
-enum class UIAction { None, Save, Load, Clear, Start, Pause, Reset, Edit, Step, Fit, Menu, Continue, CreateVoid, CreateEarth, Quit, Recalculate, ToySave, ToyPlace, ApplyOptimizations };
+enum class UIAction { None, Save, Load, Clear, Start, Pause, Reset, Edit, Step, Fit, Menu, Continue, CreateVoid, CreateEarth, Quit, Recalculate, ToySave, ToyPlace, ApplyOptimizations, ApplyExplosionPower };
 class UI {
 public:
     UI();
@@ -18,7 +18,7 @@ public:
     void refreshToys();
     bool textActive() const {return !activeField_.empty();}
     UIAction draw(SimulationState& state,Camera& camera,DebugOptions& debug);
-    UIAction drawMenu(bool hasMap,Optimizations& options);
+    UIAction drawMenu(bool hasMap,Optimizations& options,float& explosionPower);
     void refreshMaps();
     void clearFocus() {activeField_.clear();}
     void text(const std::string& value,float x,float y,float size,Color color) const;

@@ -25,6 +25,15 @@ void SimulationState::invalidateTimeline() {
     bool existed=hasTimeline();timeline_.reset();timelineCursor=0;
     if(existed&&mode==Mode::Editor) calculate(false);
 }
+void SimulationState::setExplosionPower(float power) {
+    power=std::isfinite(power)?std::clamp(power,PhysicsConfig::minExplosionPower,PhysicsConfig::maxExplosionPower):1.f;
+    if(world.config.explosionPower==power) return;
+    bool existed=hasTimeline();
+    if(mode!=Mode::Editor) reset(true);
+    timeline_.reset();timelineCursor=0;
+    world.config.explosionPower=initial_.config.explosionPower=power;
+    if(existed) calculate(false);
+}
 bool SimulationState::seek(double seconds) {
     if(!timeline_||editor.drawing()) return false;
     auto frame=std::size_t(std::llround(std::clamp(seconds,0.,calculatedSeconds())*Timeline::framesPerSecond));

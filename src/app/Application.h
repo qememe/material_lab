@@ -12,6 +12,7 @@ public:
 private:
     SimulationState state_;
     Optimizations optimizations_;
+    float explosionPower_{1.f};
     Camera camera_;
     Renderer renderer_;
     std::unique_ptr<UI> ui_;
