@@ -1,0 +1,15 @@
+build*/
+*.scene
+*.tmp
+third_party/
+toybox/
+maps/
+*.toy
+*.log
+*.bin
+*.user
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+CMakeUserPresets.json

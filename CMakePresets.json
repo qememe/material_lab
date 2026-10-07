@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {"name":"release","generator":"Unix Makefiles","binaryDir":"${sourceDir}/build","cacheVariables":{"CMAKE_BUILD_TYPE":"Release"}},
+    {"name":"core","generator":"Unix Makefiles","binaryDir":"${sourceDir}/build-core","cacheVariables":{"CMAKE_BUILD_TYPE":"Debug","MATERIAL_LAB_GUI":"OFF"}},
+    {"name":"sanitize","inherits":"core","binaryDir":"${sourceDir}/build-sanitize","cacheVariables":{"MATERIAL_LAB_SANITIZERS":"ON"}}
+  ],
+  "buildPresets": [
+    {"name":"release","configurePreset":"release","jobs":6},
+    {"name":"core","configurePreset":"core","jobs":6},
+    {"name":"sanitize","configurePreset":"sanitize","jobs":6}
+  ],
+  "testPresets": [
+    {"name":"release","configurePreset":"release","output":{"outputOnFailure":true}},
+    {"name":"core","configurePreset":"core","output":{"outputOnFailure":true}},
+    {"name":"sanitize","configurePreset":"sanitize","output":{"outputOnFailure":true}}
+  ]
+}
